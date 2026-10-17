@@ -1,5 +1,7 @@
 # CodexPet
 
+[English](../README.md) | [简体中文](README.zh-CN.md) | [Türkçe](README.tr.md)
+
 A Windows desktop companion that displays Codex usage limits, reset cards and extra credits. Includes two appearances, head pats, dragging, a system tray menu and one-click connection.
 
 1. Download and fully extract the [Windows release](https://github.com/Leezxrc/CodexPet/releases/latest), or clone the complete repository.
