@@ -5,6 +5,27 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QPushB
 
 from .client import Cancelled, UsageError
 from .connection import ChatGPTLoginRequired, connect_account
+from .i18n import Translator
+
+
+class LocalizedText:
+    """Retain the source text so an active connection can switch languages."""
+    def __init__(self, text, translator):
+        self.translator = translator
+        self.source_text = text
+        super().__init__(translator(text))
+
+    def setText(self, text):
+        self.source_text = text
+        super().setText(self.translator(text))
+
+
+class LocalizedLabel(LocalizedText, QLabel):
+    pass
+
+
+class LocalizedButton(LocalizedText, QPushButton):
+    pass
 
 
 class ConnectionWorker(QThread):
@@ -39,11 +60,12 @@ class ConnectionDialog(QDialog):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self.settings = settings
+        self.translate = Translator(settings.get('language', 'zh-CN'))
         self.worker = None
         self.replace_login = False
         self.close_requested = False
-        self.setWindowTitle('连接 Codex · 码伴')
-        self.setMinimumWidth(440)
+        self.setWindowTitle(self.translate('连接 Codex · 码伴'))
+        self.setFixedWidth(520)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setStyleSheet('''QDialog { background:#262132; color:#eee9f6; }
             QLabel { color:#eee9f6; font:13px "Microsoft YaHei UI"; }
@@ -54,13 +76,14 @@ class ConnectionDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(18)
-        title = QLabel('让码伴帮你看着额度')
+        title = LocalizedLabel('让码伴帮你看着额度', self.translate)
+        title.setWordWrap(True)
         title.setStyleSheet('font-size:20px; font-weight:600;')
         layout.addWidget(title)
-        description = QLabel('自动检测 Codex 并复用已有登录。\n缺少 CLI 时会下载 OpenAI 官方版本；未登录时打开浏览器授权。')
+        description = LocalizedLabel('自动检测 Codex 并复用已有登录。\n缺少 CLI 时会下载 OpenAI 官方版本；未登录时打开浏览器授权。', self.translate)
         description.setWordWrap(True)
         layout.addWidget(description)
-        self.status_label = QLabel('准备好后，点击下方按钮开始。')
+        self.status_label = LocalizedLabel('准备好后，点击下方按钮开始。', self.translate)
         self.status_label.setWordWrap(True)
         self.status_label.setMinimumHeight(64)
         self.status_label.setTextFormat(Qt.TextFormat.PlainText)
@@ -70,21 +93,29 @@ class ConnectionDialog(QDialog):
         self.progress_bar.setTextVisible(False)
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
-        note = QLabel('无需填写 API Key。密码和验证码只在官方登录页面输入。\n请与 Codex 桌面应用使用同一账号；重新登录会更新 CLI 登录。')
+        note = LocalizedLabel('无需填写 API Key。密码和验证码只在官方登录页面输入。\n请与 Codex 桌面应用使用同一账号；重新登录会更新 CLI 登录。', self.translate)
         note.setStyleSheet('color:#aaa1bb;font-size:11px;')
         note.setWordWrap(True)
         layout.addWidget(note)
         buttons = QHBoxLayout()
-        self.start_button = QPushButton('一键连接 Codex')
+        self.start_button = LocalizedButton('一键连接 Codex', self.translate)
         self.start_button.clicked.connect(self.start)
-        self.cancel_button = QPushButton('关闭')
+        self.cancel_button = LocalizedButton('关闭', self.translate)
         self.cancel_button.clicked.connect(self.reject)
-        self.login_button = QPushButton('重新登录')
+        self.login_button = LocalizedButton('重新登录', self.translate)
         self.login_button.clicked.connect(self.relogin)
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.login_button)
         buttons.addWidget(self.cancel_button)
         layout.addLayout(buttons)
+
+    def retranslate(self, language):
+        self.translate.language = language
+        self.setWindowTitle(self.translate('连接 Codex · 码伴'))
+        for widget in self.findChildren(QLabel) + self.findChildren(QPushButton):
+            if isinstance(widget, LocalizedText):
+                widget.setText(widget.source_text)
+        self.adjustSize()
 
     def busy(self):
         return self.worker is not None

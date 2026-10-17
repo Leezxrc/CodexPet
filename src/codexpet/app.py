@@ -9,7 +9,7 @@ import threading
 import time
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, QThread, Signal, QLockFile
-from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QRegion
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QFontMetricsF, QIcon, QPainter, QPainterPath, QPen, QPixmap, QRegion
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 from PySide6.QtCore import QUrl
@@ -19,6 +19,7 @@ from .quota import Snapshot, Window, reset_date, reset_text
 from .settings import Settings, data_dir, project_root
 from .appearance import APPEARANCES, PAT_DURATION, pat_transform
 from .connection_dialog import ConnectionDialog
+from .i18n import LANGUAGES, Translator
 
 BASE_WIDTH = 300
 TOP_MARGIN = 32
@@ -61,6 +62,7 @@ class PetWindow(QWidget):
     def __init__(self, settings=None, online=True, demo=False, tray=True):
         super().__init__()
         self.settings = settings or Settings()
+        self.translate = Translator(self.settings.get('language', 'zh-CN'))
         self.online = online
         self.demo = demo
         self.snapshot = None
@@ -91,7 +93,7 @@ class PetWindow(QWidget):
         if self.pet.isNull():
             raise RuntimeError('Missing pet appearance asset')
         self.pet_floor = 1 + 202 * (QRegion(self.pet.mask()).boundingRect().bottom() + 1) / self.pet.height()
-        self.setWindowTitle('CodexPet · 码伴')
+        self.setWindowTitle(self.translate('CodexPet · 码伴'))
         self.setWindowIcon(QIcon(self.pet))
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
         if self.on_top:
@@ -105,7 +107,7 @@ class PetWindow(QWidget):
         self.tray = None
         if tray and QSystemTrayIcon.isSystemTrayAvailable():
             self.tray = QSystemTrayIcon(QIcon(self.pet), self)
-            self.tray.setToolTip('CodexPet · 码伴')
+            self.tray.setToolTip(self.translate('CodexPet · 码伴'))
             self.tray.setContextMenu(self.make_menu())
             self.tray.activated.connect(self.tray_activate)
             self.tray.show()
@@ -177,21 +179,24 @@ class PetWindow(QWidget):
             return
         self.snapshot = snapshot
         self.error = ''
+        self.setToolTip('')
         if self.tray:
             rows = []
             for window in (snapshot.primary, snapshot.secondary):
                 if window and window.remaining is not None:
-                    rows.append(f'{window.label}：剩余 {window.remaining:g}%')
-            rows.extend((f'重置卡：{snapshot.reset_credits_text}', f'额外积分：{snapshot.credit_balance_text}'))
-            self.tray.setToolTip('CodexPet · 码伴\n' + '\n'.join(rows))
+                    remaining = self.translate.number(f'{window.remaining:g}')
+                    rows.append(f'{window.label}：剩余 {remaining}%')
+            rows.extend((f'重置卡：{snapshot.reset_credits_text}', f'额外积分：{self.translate.number(snapshot.credit_balance_text)}'))
+            self.tray.setToolTip(self.translate('CodexPet · 码伴\n' + '\n'.join(rows)))
         self.update()
 
     def on_failure(self, message):
         if self.connection_dialog and self.connection_dialog.isVisible() and isinstance(self.sender(), RefreshWorker):
             return
         self.error = message
+        self.setToolTip(self.translate(message))
         if self.tray:
-            self.tray.setToolTip('CodexPet · 码伴\n暂未同步；点击查看详情')
+            self.tray.setToolTip(self.translate('CodexPet · 码伴\n暂未同步；点击查看详情'))
         self.update()
 
     def tick(self):
@@ -233,15 +238,25 @@ class PetWindow(QWidget):
             return '待刷新', '#e9bd81'
         return ('已同步', '#a9d6c6') if self.snapshot else ('等待连接', MUTED)
 
-    @staticmethod
-    def text(painter, x, y, width, height, value, size=12, color=TEXT, bold=False, align=None):
+    def text(self, painter, x, y, width, height, value, size=12, color=TEXT, bold=False, align=None):
+        value = self.translate(value)
         font = QFont('Microsoft YaHei UI')
         font.setPixelSize(size)
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias | QFont.StyleStrategy.NoSubpixelAntialias)
         font.setWeight(QFont.Weight.DemiBold if bold else QFont.Weight.Normal)
+        flags = align or (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        # Fit translated strings in the compact card, including wrapped errors.
+        while font.pixelSize() > 8:
+            metrics = QFontMetricsF(font)
+            bounds = metrics.boundingRect(QRectF(0, 0, width, height), int(flags), value)
+            if bounds.width() <= width + .5 and bounds.height() <= height + .5:
+                break
+            font.setPixelSize(font.pixelSize() - 1)
+        if not flags & Qt.TextFlag.TextWordWrap:
+            value = QFontMetricsF(font).elidedText(value, Qt.TextElideMode.ElideRight, width)
         painter.setFont(font)
         painter.setPen(QColor(color))
-        painter.drawText(QRectF(x, y, width, height), align or (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), value)
+        painter.drawText(QRectF(x, y, width, height), flags, value)
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -291,8 +306,11 @@ class PetWindow(QWidget):
                 p.setBrush(QColor('#e2acd9'))
                 p.drawPath(heart)
                 p.restore()
-        self.text(p, 28, 213, 43, 23, '码伴', 15, TEXT, True)
-        self.text(p, 74, 215, 65, 20, 'CODEXPET', 9, MUTED)
+        if self.translate.language == 'zh-CN':
+            self.text(p, 28, 213, 43, 23, '码伴', 15, TEXT, True)
+            self.text(p, 74, 215, 65, 20, 'CODEXPET', 9, MUTED)
+        else:
+            self.text(p, 28, 213, 112, 23, 'CodexPet', 15, TEXT, True)
         status, status_color = self.status()
         p.setBrush(QColor(status_color))
         p.drawEllipse(QRectF(155, 223, 5, 5))
@@ -309,7 +327,7 @@ class PetWindow(QWidget):
             label = window.label if window else ('主要额度' if index == 0 else '次要额度')
             remaining = window.remaining if window else None
             expired = window is not None and window.reset_due()
-            value = '—' if remaining is None else f'{remaining:g}%'
+            value = '—' if remaining is None else self.translate.number(f'{remaining:g}%')
             color = '#a9d6c6' if index else PURPLE
             if remaining is not None and remaining < 20:
                 color = '#ecb481'
@@ -325,6 +343,7 @@ class PetWindow(QWidget):
                 p.setBrush(QColor(color))
                 p.drawRoundedRect(QRectF(29, y + 26, max(3, 242 * remaining / 100), 5), 2.5, 2.5)
         extra_values = (self.snapshot.reset_credits_text, self.snapshot.credit_balance_text) if self.snapshot else ('未提供', '未提供')
+        extra_values = (extra_values[0], self.translate.number(extra_values[1]))
         for x, label, value in zip((29, 155), ('重置卡', '额外积分'), extra_values):
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor('#302a40'))
@@ -346,7 +365,7 @@ class PetWindow(QWidget):
                 window = (self.snapshot.primary, self.snapshot.secondary)[index] if self.snapshot else None
                 self.text(p, 29, y, 242, 19, reset_text(window), 12, TEXT)
                 label = window.label if window else ('主要额度' if index == 0 else '次要额度')
-                self.text(p, 29, y + 18, 242, 17, f'{label} · {reset_date(window)}（本机时间）', 10, MUTED)
+                self.text(p, 29, y + 18, 242, 17, f'{label} · {reset_date(window, self.translate.language)}（本机时间）', 10, MUTED)
             if self.error:
                 detail = self.error
                 if self.snapshot:
@@ -462,7 +481,46 @@ class PetWindow(QWidget):
             menu.addAction('隐藏到托盘', self.hide)
         menu.addSeparator()
         menu.addAction('退出码伴', self.close)
+        self.localize_menu(menu)
+        menu.insertMenu(menu.actions()[3], self.language_menu(menu))
         return menu
+
+    def localize_menu(self, menu):
+        for action in menu.actions():
+            action.setText(self.translate(action.text()))
+            if action.menu():
+                self.localize_menu(action.menu())
+
+    def language_menu(self, parent):
+        menu = QMenu('语言 / Language / Dil', parent)
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        for code, name in LANGUAGES.items():
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(code == self.translate.language)
+            group.addAction(action)
+            action.triggered.connect(lambda checked=False, language=code: self.change_language(language))
+        return menu
+
+    def change_language(self, language):
+        if language not in LANGUAGES:
+            return
+        self.translate.language = language
+        self.settings.update(language=language)
+        self.setWindowTitle(self.translate('CodexPet · 码伴'))
+        self.setToolTip(self.translate(self.error))
+        self.update_tray_menu()
+        if self.tray:
+            if self.error:
+                self.tray.setToolTip(self.translate('CodexPet · 码伴\n暂未同步；点击查看详情'))
+            elif self.snapshot:
+                self.on_success(self.snapshot)
+            else:
+                self.tray.setToolTip(self.translate('CodexPet · 码伴'))
+        if self.connection_dialog:
+            self.connection_dialog.retranslate(language)
+        self.update()
 
     def change_appearance(self, selected):
         if selected not in APPEARANCES:
@@ -520,7 +578,7 @@ class PetWindow(QWidget):
         if self.refreshing() or (self.connection_dialog and self.connection_dialog.busy()):
             self.show_bubble('正在读取，稍后再更换路径')
             return
-        path, _ = QFileDialog.getOpenFileName(self, '选择 Codex CLI 的 codex.exe', '', 'Codex CLI (codex.exe)')
+        path, _ = QFileDialog.getOpenFileName(self, self.translate('选择 Codex CLI 的 codex.exe'), '', 'Codex CLI (codex.exe)')
         if path:
             self.snapshot = None
             self.error = ''
@@ -546,7 +604,7 @@ class PetWindow(QWidget):
         self.show_bubble('连接好了，我来帮你看着额度。')
 
     def credit_help(self):
-        QMessageBox.information(self, '重置卡与额外积分 · 码伴',
+        self.information('重置卡与额外积分 · 码伴',
             '重置卡：每次兑换消耗 1 张，用于重置符合条件的 Codex 额度窗口。\n'
             '具体恢复哪些窗口以 Codex 的兑换说明和结果为准；卡片可能有到期时间。\n'
             '需要兑换时，请在 Codex 中使用重置入口。码伴只显示数量。\n\n'
@@ -556,7 +614,7 @@ class PetWindow(QWidget):
             '连接失败时保留上次结果并标记“上次”，不会把未知数据当成 0。')
 
     def connection_help(self):
-        QMessageBox.information(self, '连接 Codex · 码伴',
+        self.information('连接 Codex · 码伴',
             '码伴读取本机 Codex CLI 当前登录账号的额度。\n\n'
             '推荐：右键选择“一键连接 Codex”，自动检测、安装并引导登录。\n'
             '若浏览器未打开，可在终端手动运行 codex login。\n'
@@ -565,6 +623,12 @@ class PetWindow(QWidget):
             '也可以右键“选择 codex.exe”指定已安装的原生 CLI。\n\n'
             '两条额度来自服务返回的窗口；缺失数据会显示 —。\n'
             '刷新只查询额度；摸头和动画由本地程序完成。')
+
+    def information(self, title, message):
+        box = QMessageBox(QMessageBox.Icon.Information, self.translate(title), self.translate(message), parent=self)
+        button = box.addButton(self.translate('关闭'), QMessageBox.ButtonRole.AcceptRole)
+        box.setDefaultButton(button)
+        box.exec()
 
     def tray_activate(self, reason):
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
@@ -654,6 +718,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--demo', action='store_true', help='Clearly labelled offline sample data')
     parser.add_argument('--appearance', choices=APPEARANCES, help='Select and remember a pet appearance')
+    parser.add_argument('--language', choices=LANGUAGES, help='Select and remember the interface language')
     parser.add_argument('--preview', type=Path, help='Render a labelled demo PNG and exit')
     parser.add_argument('--check', type=Path, help='Run one real read, save redacted health report and PNG, then exit')
     args = parser.parse_args()
@@ -665,6 +730,8 @@ def main():
     settings = Settings((args.preview or args.check).parent / 'diagnostic-settings.json') if diagnostic else Settings()
     if args.appearance:
         settings.update(appearance=args.appearance)
+    if args.language:
+        settings.update(language=args.language)
     window = PetWindow(settings, online=not (args.demo or args.preview), demo=bool(args.demo or args.preview), tray=not diagnostic)
     guard = None
     if not diagnostic:
@@ -687,7 +754,7 @@ def main():
                 return
             args.check.parent.mkdir(parents=True, exist_ok=True)
             snap = window.snapshot
-            result = {'ok': bool(snap), 'error': window.error, 'assetLoaded': not window.pet.isNull(), 'appearance': window.appearance, 'frozen': bool(getattr(sys, 'frozen', False)),
+            result = {'ok': bool(snap), 'error': window.error, 'assetLoaded': not window.pet.isNull(), 'appearance': window.appearance, 'language': window.translate.language, 'frozen': bool(getattr(sys, 'frozen', False)),
                       'primaryRemaining': snap.primary.remaining if snap and snap.primary else None,
                       'secondaryRemaining': snap.secondary.remaining if snap and snap.secondary else None,
                       'resetCredits': snap.reset_credits if snap else None,

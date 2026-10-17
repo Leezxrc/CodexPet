@@ -127,10 +127,10 @@ def reset_text(window, now=None):
     return f'{minutes} 分钟后重置' if minutes else '不到 1 分钟后重置'
 
 
-def reset_date(window):
+def reset_date(window, language='zh-CN'):
     if window is None or window.resets_at is None:
         return '—'
     try:
-        return datetime.fromtimestamp(window.resets_at).strftime('%m/%d %H:%M')
+        return datetime.fromtimestamp(window.resets_at).strftime('%d.%m %H:%M' if language == 'tr' else '%m/%d %H:%M')
     except (ValueError, OSError, OverflowError):
         return '—'

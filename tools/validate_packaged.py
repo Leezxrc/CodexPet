@@ -26,6 +26,17 @@ report = json.loads(report_path.read_text(encoding='utf-8'))
 assert report['ok'] and report['frozen'] and report['assetLoaded'], report
 print('PACKAGED_LIVE_READ', json.dumps(report, ensure_ascii=True))
 
+# Exercise the bundled catalog in each language without touching user settings.
+for language in ('zh-CN', 'en', 'tr'):
+    preview = root / 'build' / f'packaged-preview-{language}.png'
+    before = time.time()
+    subprocess.run([str(exe), '--language', language, '--preview', str(preview)],
+                   cwd=exe.parent, env=env, timeout=15, check=True)
+    assert preview.stat().st_mtime >= before - 1 and preview.stat().st_size > 10000
+    saved = json.loads((preview.parent / 'diagnostic-settings.json').read_text(encoding='utf-8'))
+    assert saved['language'] == language
+print('PACKAGED_THREE_LANGUAGE_PREVIEWS_OK')
+
 # Demo mode never starts a Codex subprocess, so these owned test processes may
 # be terminated to simulate a crash and exercise stale-lock recovery safely.
 first = subprocess.Popen([str(exe), '--demo'], cwd=exe.parent, env=env)

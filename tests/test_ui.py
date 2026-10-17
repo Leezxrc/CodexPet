@@ -121,6 +121,44 @@ class UiTests(unittest.TestCase):
             self.assertIs(self.pet.snapshot, snapshot)
         dialog.reject()
 
+    def test_language_menu_persists_and_preserves_data_and_active_feedback(self):
+        self.pet.pat_head()
+        snapshot, bubble = self.pet.snapshot, self.pet.bubble
+        self.pet.on_failure('读取额度超时，稍后会自动重试')
+        menu = self.pet.make_menu()
+        language = next(a.menu() for a in menu.actions() if a.text() == '语言 / Language / Dil')
+        next(a for a in language.actions() if a.text() == 'Türkçe').trigger()
+        self.assertEqual(self.pet.translate.language, 'tr')
+        self.assertEqual(Settings(self.pet.settings.path).get('language'), 'tr')
+        self.assertIs(self.pet.snapshot, snapshot)
+        self.assertEqual(self.pet.bubble, bubble)
+        self.assertTrue(self.pet.stale())
+        self.assertIn('zaman aşımı', self.pet.toolTip())
+        translated_menu = self.pet.make_menu()
+        self.assertIn('Kotayı yenile', [a.text() for a in translated_menu.actions()])
+        restored = PetWindow(Settings(self.pet.settings.path), online=False, tray=False)
+        self.assertEqual(restored.translate.language, 'tr')
+        restored.close()
+        restored.deleteLater()
+        menu.deleteLater()
+        translated_menu.deleteLater()
+
+    def test_language_switch_retranslates_connection_progress_and_errors(self):
+        self.pet.open_connection()
+        dialog = self.pet.connection_dialog
+        dialog.status_label.setText('正在下载 codex：12 MB（首次连接需要）')
+        self.pet.change_language('en')
+        self.assertIn('Downloading codex: 12 MB', dialog.status_label.text())
+        self.assertEqual(dialog.start_button.text(), 'Connect')
+        dialog.on_failure('读取额度超时，稍后会自动重试', False)
+        self.assertIn('timed out', dialog.status_label.text())
+        self.pet.change_language('tr')
+        self.assertIn('zaman aşımı', dialog.status_label.text())
+        self.assertEqual(dialog.start_button.text(), 'Tekrar dene')
+        self.pet.change_language('zh-CN')
+        self.assertEqual(dialog.status_label.text(), '读取额度超时，稍后会自动重试')
+        dialog.reject()
+
 
 if __name__ == '__main__':
     unittest.main()
