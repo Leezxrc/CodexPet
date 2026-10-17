@@ -22,6 +22,9 @@ for line in sys.stdin:
         if mode == 'auth':
             print(json.dumps({'id': request['id'], 'error': {'code': 401, 'message': 'auth token secret-must-not-leak'}}), flush=True)
         else:
-            print(json.dumps({'id': request['id'], 'result': {'rateLimits': {'primary': {'usedPercent': 42, 'windowDurationMins': 300}}}}), flush=True)
+            print(json.dumps({'id': request['id'], 'result': {
+                'rateLimits': {'primary': {'usedPercent': 42, 'windowDurationMins': 300},
+                               'credits': {'balance': '12.3400', 'unlimited': False}},
+                'rateLimitResetCredits': {'availableCount': 2, 'credits': None}}}), flush=True)
     else:
         raise RuntimeError('Unexpected non-read-only RPC')

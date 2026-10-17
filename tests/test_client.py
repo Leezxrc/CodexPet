@@ -23,7 +23,10 @@ class ClientTests(unittest.TestCase):
             self.assertIsNotNone(proc.poll(), 'Client left a subprocess running')
 
     def test_handshake_ids_noise_and_read_only_request(self):
-        self.assertEqual(self.request('ok').primary.remaining, 58)
+        snapshot = self.request('ok')
+        self.assertEqual(snapshot.primary.remaining, 58)
+        self.assertEqual(snapshot.reset_credits, 2)
+        self.assertEqual(snapshot.credit_balance_text, '12.34')
 
     def test_auth_message_redacted(self):
         with self.assertRaises(UsageError) as error:

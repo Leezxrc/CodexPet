@@ -1,5 +1,6 @@
 """Render the real UI's offline demonstration states for visual QA."""
 from pathlib import Path
+from decimal import Decimal
 import sys
 import time
 
@@ -51,7 +52,7 @@ QTest.qWait(50)
 save('preview-unavailable.png')
 window.demo = True
 now = time.time()
-window.on_success(Snapshot(Window(34, 300, now + 7260), Window(5, 10080, now + 365400), 'Plus', now))
+window.on_success(Snapshot(Window(34, 300, now + 7260), Window(5, 10080, now + 365400), 'Plus', now, 2, Decimal('128.50')))
 window.expanded = False
 window.resize_for_state()
 window.change_appearance('chibi')

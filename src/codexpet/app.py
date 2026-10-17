@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 import argparse
 import json
 import math
@@ -20,8 +21,8 @@ from .appearance import APPEARANCES, PAT_DURATION, pat_transform
 
 BASE_WIDTH = 300
 TOP_MARGIN = 32
-COMPACT_HEIGHT = 368
-EXPANDED_HEIGHT = 520
+COMPACT_HEIGHT = 432
+EXPANDED_HEIGHT = 584
 CARD_TOP = 202
 PURPLE = '#c1b1f4'
 TEXT = '#f1edf9'
@@ -120,7 +121,8 @@ class PetWindow(QWidget):
             QTimer.singleShot(200, self.refresh)
         if demo:
             now = time.time()
-            self.snapshot = Snapshot(Window(34, 300, now + 7260), Window(5, 10080, now + 365400), 'Plus', now)
+            self.snapshot = Snapshot(Window(34, 300, now + 7260), Window(5, 10080, now + 365400), 'Plus', now,
+                                     2, Decimal('128.50'))
 
     def resize_for_state(self):
         self.setFixedSize(round(BASE_WIDTH * self.scale), round(((EXPANDED_HEIGHT if self.expanded else COMPACT_HEIGHT) + TOP_MARGIN) * self.scale))
@@ -175,6 +177,7 @@ class PetWindow(QWidget):
             for window in (snapshot.primary, snapshot.secondary):
                 if window and window.remaining is not None:
                     rows.append(f'{window.label}：剩余 {window.remaining:g}%')
+            rows.extend((f'重置卡：{snapshot.reset_credits_text}', f'额外积分：{snapshot.credit_balance_text}'))
             self.tray.setToolTip('CodexPet · 码伴\n' + '\n'.join(rows))
         self.update()
 
@@ -312,18 +315,25 @@ class PetWindow(QWidget):
             if remaining is not None and remaining > 0:
                 p.setBrush(QColor(color))
                 p.drawRoundedRect(QRectF(29, y + 26, max(3, 242 * remaining / 100), 5), 2.5, 2.5)
+        extra_values = (self.snapshot.reset_credits_text, self.snapshot.credit_balance_text) if self.snapshot else ('未提供', '未提供')
+        for x, label, value in zip((29, 155), ('重置卡', '额外积分'), extra_values):
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor('#302a40'))
+            p.drawRoundedRect(QRectF(x, 331, 116, 53), 9, 9)
+            self.text(p, x + 9, 336, 98, 17, label + (' · 上次' if self.stale() else ''), 10, MUTED)
+            self.text(p, x + 9, 354, 98, 24, value, 14, '#b6a899' if self.stale() else TEXT, True)
         if self.error:
             footer = '连接异常 · 点击查看处理方法'
         elif self.stale():
             footer = '上次数据 · 等待同步'
         else:
             footer = '收起详情' if self.expanded else '点击查看重置时间'
-        self.text(p, 29, 331, 230, 19, footer, 10, MUTED)
-        self.text(p, 255, 330, 17, 20, '⌃' if self.expanded else '⌄', 16, MUTED, align=Qt.AlignmentFlag.AlignCenter)
+        self.text(p, 29, 395, 230, 19, footer, 10, MUTED)
+        self.text(p, 255, 394, 17, 20, '⌃' if self.expanded else '⌄', 16, MUTED, align=Qt.AlignmentFlag.AlignCenter)
         if self.expanded:
             p.setPen(QPen(QColor('#494152'), 1))
-            p.drawLine(QPointF(29, 359), QPointF(271, 359))
-            for index, y in enumerate((369, 411)):
+            p.drawLine(QPointF(29, 423), QPointF(271, 423))
+            for index, y in enumerate((433, 475)):
                 window = (self.snapshot.primary, self.snapshot.secondary)[index] if self.snapshot else None
                 self.text(p, 29, y, 242, 19, reset_text(window), 12, TEXT)
                 label = window.label if window else ('主要额度' if index == 0 else '次要额度')
@@ -337,7 +347,7 @@ class PetWindow(QWidget):
                 detail = f'{self.snapshot.plan} · 上次更新 {stamp}\n每 2 分钟自动刷新 · 右键可调整桌宠'
             else:
                 detail = '正在连接本机 Codex CLI…\n若未登录，请先在终端运行 codex login'
-            self.text(p, 29, 454, 242, 48, detail, 10, '#e9bd81' if self.error else MUTED,
+            self.text(p, 29, 518, 242, 48, detail, 10, '#e9bd81' if self.error else MUTED,
                       align=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap)
         if self.bubble:
             p.setPen(QPen(QColor('#d3c7ec'), 1))
@@ -434,6 +444,7 @@ class PetWindow(QWidget):
         menu.addSeparator()
         menu.addAction('选择 codex.exe…', self.choose_cli)
         menu.addAction('连接帮助', self.connection_help)
+        menu.addAction('重置卡与积分说明', self.credit_help)
         menu.addAction('打开项目文件夹', lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(project_root()))))
         if self.tray:
             menu.addAction('隐藏到托盘', self.hide)
@@ -502,6 +513,16 @@ class PetWindow(QWidget):
             self.error = ''
             self.settings.update(cli_path=path)
             self.refresh()
+
+    def credit_help(self):
+        QMessageBox.information(self, '重置卡与额外积分 · 码伴',
+            '重置卡：每次兑换消耗 1 张，用于重置符合条件的 Codex 额度窗口。\n'
+            '具体恢复哪些窗口以 Codex 的兑换说明和结果为准；卡片可能有到期时间。\n'
+            '需要兑换时，请在 Codex 中使用重置入口。码伴只显示数量。\n\n'
+            '额外积分：套餐额度用尽后可继续使用的 credits 余额，不是金额或消息条数。\n'
+            '余额按两位小数显示；“不限量”仅在服务明确返回时显示。\n\n'
+            '两项与额度每 2 分钟一起刷新；“未提供”表示 CLI 或服务没有返回数据。\n'
+            '连接失败时保留上次结果并标记“上次”，不会把未知数据当成 0。')
 
     def connection_help(self):
         QMessageBox.information(self, '连接 Codex · 码伴',
@@ -632,7 +653,10 @@ def main():
             snap = window.snapshot
             result = {'ok': bool(snap), 'error': window.error, 'assetLoaded': not window.pet.isNull(), 'appearance': window.appearance, 'frozen': bool(getattr(sys, 'frozen', False)),
                       'primaryRemaining': snap.primary.remaining if snap and snap.primary else None,
-                      'secondaryRemaining': snap.secondary.remaining if snap and snap.secondary else None}
+                      'secondaryRemaining': snap.secondary.remaining if snap and snap.secondary else None,
+                      'resetCredits': snap.reset_credits if snap else None,
+                      'creditBalance': str(snap.credit_balance) if snap and snap.credit_balance is not None else None,
+                      'creditsUnlimited': snap.credits_unlimited if snap else False}
             args.check.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
             window.expanded = True
             window.resize_for_state()

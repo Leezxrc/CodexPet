@@ -1,6 +1,7 @@
 """Pure quota interpretation. Unknown values must never become zero."""
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 import math
 import time
 
@@ -43,6 +44,23 @@ class Snapshot:
     secondary: Window | None
     plan: str
     fetched_at: float
+    reset_credits: int | None = None
+    credit_balance: Decimal | None = None
+    credits_unlimited: bool = False
+
+    @property
+    def reset_credits_text(self):
+        return '未提供' if self.reset_credits is None else f'{self.reset_credits} 张'
+
+    @property
+    def credit_balance_text(self):
+        if self.credits_unlimited:
+            return '不限量'
+        if self.credit_balance is None:
+            return '未提供'
+        if self.credit_balance >= Decimal('1000000'):
+            return f'{self.credit_balance:.2E}'
+        return f'{self.credit_balance:,.2f}'
 
     def stale(self, now=None):
         now = time.time() if now is None else now
@@ -73,7 +91,24 @@ def parse_snapshot(result, now=None):
         raise ValueError('当前账号未提供可显示的额度；请确认使用 ChatGPT 账号登录')
     plan = raw.get('planType')
     plan = plan.title() if isinstance(plan, str) and len(plan) < 30 else 'Codex'
-    return Snapshot(primary, secondary, plan, time.time() if now is None else now)
+    resets = result.get('rateLimitResetCredits')
+    count = resets.get('availableCount') if isinstance(resets, dict) else None
+    # The service may cap the detail list; never infer this count from its length.
+    if type(count) is not int or count < 0:
+        count = None
+    credits = raw.get('credits')
+    credits = credits if isinstance(credits, dict) else {}
+    balance = credits.get('balance')
+    amount = None
+    if type(balance) in (str, int, float) and len(str(balance)) <= 100:
+        try:
+            parsed = Decimal(str(balance))
+            if parsed.is_finite() and parsed >= 0:
+                amount = parsed
+        except InvalidOperation:
+            pass
+    return Snapshot(primary, secondary, plan, time.time() if now is None else now,
+                    count, amount, credits.get('unlimited') is True)
 
 
 def reset_text(window, now=None):
