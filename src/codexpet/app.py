@@ -9,7 +9,7 @@ import threading
 import time
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer, QThread, Signal, QLockFile
-from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QRegion
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 from PySide6.QtCore import QUrl
@@ -88,6 +88,7 @@ class PetWindow(QWidget):
         self.pet = QPixmap(str(asset_path(APPEARANCES[self.appearance].asset)))
         if self.pet.isNull():
             raise RuntimeError('Missing pet appearance asset')
+        self.pet_floor = 1 + 202 * (QRegion(self.pet.mask()).boundingRect().bottom() + 1) / self.pet.height()
         self.setWindowTitle('CodexPet · 码伴')
         self.setWindowIcon(QIcon(self.pet))
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool
@@ -262,11 +263,13 @@ class PetWindow(QWidget):
         sprite_width = 202 * self.pet.width() / self.pet.height()
         p.save()
         if pat_active:
-            vertical, angle = pat_transform(self.appearance, pat_age)
-            p.translate(0, vertical)
-            p.translate(150, 195)
+            width_scale, height_scale, angle = pat_transform(self.appearance, pat_age)
+            # Anchor the visible feet, excluding transparent padding in the PNG.
+            pivot_y = self.pet_floor if self.appearance == 'chibi' else 195
+            p.translate(150, pivot_y)
+            p.scale(width_scale, height_scale)
             p.rotate(angle)
-            p.translate(-150, -195)
+            p.translate(-150, -pivot_y)
         p.drawPixmap(QRectF((BASE_WIDTH - sprite_width) / 2, 1 + bob, sprite_width, 202), self._sprite_cache, QRectF(self._sprite_cache.rect()))
         p.restore()
         if pat_active:
@@ -461,6 +464,7 @@ class PetWindow(QWidget):
             return
         self.appearance = selected
         self.pet = sprite
+        self.pet_floor = 1 + 202 * (QRegion(self.pet.mask()).boundingRect().bottom() + 1) / self.pet.height()
         self._sprite_cache = None
         self._sprite_key = None
         self.pat_started = -100.0
