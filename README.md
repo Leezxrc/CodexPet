@@ -14,6 +14,24 @@ v0.4.0 新增：**一键连接 Codex**，自动检测 CLI、复用登录，缺�
 
 ## 开始使用
 
+整个项目集中在同一个 `CodexPet · 码伴` 文件夹中，Git 仓库包含可直接运行的 Windows 程序及其运行库。克隆仓库或完整下载源码 ZIP 后，双击根目录的 **启动码伴.vbs** 即可启动。
+
+```text
+CodexPet · 码伴/
+├─ 启动码伴.vbs                 双击启动
+├─ app/CodexPet/
+│  ├─ CodexPet.exe              Windows 主程序
+│  └─ _internal/                必需运行库与内置素材
+├─ src/                        源码
+├─ assets/                     形象素材
+├─ docs/                       说明与预览
+├─ tools/                      打包、验证和开始菜单工具
+├─ tests/                      测试
+└─ README.md                   使用说明
+```
+
+本机的 `data/`（设置与按需安装的 CLI）、`build/`（构建文件）、`.venv/`（开发环境）和 `releases/`（下载包）也保存在这个项目文件夹下，不提交到公开仓库。
+
 从 [Releases 下载 Windows EXE 完整包](https://github.com/Leezxrc/CodexPet/releases/latest)，将 ZIP 完整解压后使用。
 
 使用打包版：进入 **app\CodexPet** 双击 **CodexPet.exe**。
@@ -25,7 +43,7 @@ v0.4.0 新增：**一键连接 Codex**，自动检测 CLI、复用登录，缺�
 
 添加到开始菜单：在项目目录运行 `powershell -ExecutionPolicy Bypass -File tools\install-start-menu.ps1`。随后在 Windows 开始菜单搜索 **码伴** 或 **CodexPet** 即可启动。此脚本只为当前用户创建快捷方式，不需要管理员权限。移动项目目录后重新运行脚本即可更新路径。
 
-使用源码：安装 Python 3.12，在项目目录执行 `python -m venv .venv`，然后执行 `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` 和 `.\.venv\Scripts\python.exe src\main.py`。Git 仓库不包含 `.venv` 和打包运行库。
+开发源码：安装 Python 3.12，在项目目录执行 `python -m venv .venv`，然后执行 `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` 和 `.\.venv\Scripts\python.exe src\main.py`。普通使用者直接运行随仓库提供的 EXE 即可。
 
 本机已经验证可以读取 Codex CLI 的真实额度。码伴读取 **CLI 当前登录的 ChatGPT 账号**；如果 CLI 和 Codex 桌面应用登录了不同账号，显示的用量也会不同。首次启动约需几秒，之后每两分钟刷新一次。仅显示百分比与重置时间，不估算剩余消息条数。
 

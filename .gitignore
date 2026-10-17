@@ -1,6 +1,5 @@
 .venv/
 build/
-app/
 data/
 __pycache__/
 *.pyc
