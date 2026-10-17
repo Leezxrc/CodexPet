@@ -10,6 +10,8 @@ Windows 透明悬浮桌宠：显示 Codex 额度，支持两种形象切换、�
 
 ## 开始使用
 
+从 [Releases 下载 Windows EXE 完整包](https://github.com/Leezxrc/CodexPet/releases/latest)，将 ZIP 完整解压后使用。
+
 使用打包版：进入 **app\CodexPet** 双击 **CodexPet.exe**。
 保留整个 `app\CodexPet` 文件夹，尤其是相邻的 `_internal` 运行库。无需安装 Python。
 
