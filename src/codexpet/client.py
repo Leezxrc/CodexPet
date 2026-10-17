@@ -30,6 +30,10 @@ def find_codex(override=''):
     native = shutil.which('codex.exe')
     if native:
         return Path(native)
+    # The official standalone Windows installer uses the user's local bin.
+    standalone = Path.home() / '.local' / 'bin' / 'codex.exe'
+    if standalone.is_file():
+        return standalone
     roots = [Path(os.environ.get('APPDATA', Path.home())) / 'npm']
     for command in ('codex.cmd', 'codex.ps1', 'codex'):
         found = shutil.which(command)
@@ -53,7 +57,7 @@ def _public_error(error):
     return 'Codex 未能返回额度，请检查 CLI 登录状态或更新 CLI'
 
 
-def fetch_usage(override='', cancel=None, timeout=25.0, process_factory=subprocess.Popen, command=None):
+def _read_result(method, override='', cancel=None, timeout=25.0, process_factory=subprocess.Popen, command=None):
     cancel = cancel or threading.Event()
     if cancel.is_set():
         raise Cancelled('已取消')
@@ -118,12 +122,8 @@ def fetch_usage(override='', cancel=None, timeout=25.0, process_factory=subproce
         send({'id': 1, 'method': 'initialize', 'params': {'clientInfo': {'name': 'codex_pet', 'title': 'CodexPet', 'version': __version__}}})
         receive(1)
         send({'method': 'initialized', 'params': {}})
-        send({'id': 2, 'method': 'account/rateLimits/read'})
-        result = receive(2)
-        try:
-            return parse_snapshot(result)
-        except ValueError as exc:
-            raise UsageError(str(exc)) from exc
+        send({'id': 2, 'method': method, **({'params': {'refreshToken': False}} if method == 'account/read' else {})})
+        return receive(2)
     finally:
         stopped.set()
         if proc.poll() is None:
@@ -137,3 +137,23 @@ def fetch_usage(override='', cancel=None, timeout=25.0, process_factory=subproce
         for pipe in (proc.stdin, proc.stdout):
             if pipe:
                 pipe.close()
+
+
+def fetch_usage(override='', cancel=None, **kwargs):
+    result = _read_result('account/rateLimits/read', override, cancel, **kwargs)
+    try:
+        return parse_snapshot(result)
+    except ValueError as exc:
+        raise UsageError(str(exc)) from exc
+
+
+def read_login_state(override='', cancel=None, **kwargs):
+    result = _read_result('account/read', override, cancel, **kwargs)
+    if not isinstance(result, dict) or 'account' not in result:
+        raise UsageError('未能确认登录状态，请更新 Codex CLI 后重试')
+    account = result['account']
+    if account is None:
+        return 'signed_out'
+    if not isinstance(account, dict):
+        raise UsageError('登录状态格式不受支持，请更新 Codex CLI 后重试')
+    return 'chatgpt' if account.get('type') == 'chatgpt' else 'other'

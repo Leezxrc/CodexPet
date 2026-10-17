@@ -18,6 +18,7 @@ from .client import Cancelled, UsageError, fetch_usage
 from .quota import Snapshot, Window, reset_date, reset_text
 from .settings import Settings, data_dir, project_root
 from .appearance import APPEARANCES, PAT_DURATION, pat_transform
+from .connection_dialog import ConnectionDialog
 
 BASE_WIDTH = 300
 TOP_MARGIN = 32
@@ -65,6 +66,7 @@ class PetWindow(QWidget):
         self.snapshot = None
         self.error = ''
         self.worker = None
+        self.connection_dialog = None
         self.closing = False
         self.expanded = False
         self.scale = self.settings.get('scale', 1.0)
@@ -154,7 +156,7 @@ class PetWindow(QWidget):
         return self.worker is not None and self.worker.isRunning()
 
     def refresh(self):
-        if not self.online or self.refreshing() or self.closing:
+        if not self.online or self.refreshing() or self.closing or (self.connection_dialog and self.connection_dialog.isVisible()):
             return
         self.worker = RefreshWorker(str(self.settings.get('cli_path', '') or ''), self)
         self.worker.success.connect(self.on_success)
@@ -171,6 +173,8 @@ class PetWindow(QWidget):
         self.update()
 
     def on_success(self, snapshot):
+        if self.connection_dialog and self.connection_dialog.isVisible() and isinstance(self.sender(), RefreshWorker):
+            return
         self.snapshot = snapshot
         self.error = ''
         if self.tray:
@@ -183,6 +187,8 @@ class PetWindow(QWidget):
         self.update()
 
     def on_failure(self, message):
+        if self.connection_dialog and self.connection_dialog.isVisible() and isinstance(self.sender(), RefreshWorker):
+            return
         self.error = message
         if self.tray:
             self.tray.setToolTip('CodexPet · 码伴\n暂未同步；点击查看详情')
@@ -326,7 +332,7 @@ class PetWindow(QWidget):
             self.text(p, x + 9, 336, 98, 17, label + (' · 上次' if self.stale() else ''), 10, MUTED)
             self.text(p, x + 9, 354, 98, 24, value, 14, '#b6a899' if self.stale() else TEXT, True)
         if self.error:
-            footer = '连接异常 · 点击查看处理方法'
+            footer = '连接异常 · 点击一键连接'
         elif self.stale():
             footer = '上次数据 · 等待同步'
         else:
@@ -388,6 +394,8 @@ class PetWindow(QWidget):
                 self.refresh()
             elif QRectF(258, 211, 23, 27).contains(point):
                 self.open_menu(event.globalPosition().toPoint())
+            elif self.error and QRectF(29, 390, 242, 28).contains(point):
+                self.open_connection()
             elif point.y() >= CARD_TOP:
                 self.expanded = not self.expanded
                 self.resize_for_state()
@@ -417,6 +425,7 @@ class PetWindow(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet('QMenu { background:#262132; color:#eee9f6; border:1px solid #554967; border-radius:8px; padding:6px; font:12px "Microsoft YaHei UI"; } QMenu::item { padding:7px 24px; border-radius:4px; } QMenu::item:selected { background:#514165; } QMenu::separator { height:1px; background:#4c4258; margin:5px; }')
         menu.addAction('显示桌宠', self.reveal)
+        menu.addAction('一键连接 Codex…', self.open_connection)
         menu.addAction('刷新额度', self.refresh)
         menu.addSeparator()
         appearance_menu = menu.addMenu('切换形象')
@@ -508,7 +517,7 @@ class PetWindow(QWidget):
                 previous.deleteLater()
 
     def choose_cli(self):
-        if self.refreshing():
+        if self.refreshing() or (self.connection_dialog and self.connection_dialog.busy()):
             self.show_bubble('正在读取，稍后再更换路径')
             return
         path, _ = QFileDialog.getOpenFileName(self, '选择 Codex CLI 的 codex.exe', '', 'Codex CLI (codex.exe)')
@@ -517,6 +526,24 @@ class PetWindow(QWidget):
             self.error = ''
             self.settings.update(cli_path=path)
             self.refresh()
+
+    def open_connection(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.cancel.set()
+        if not self.connection_dialog:
+            self.connection_dialog = ConnectionDialog(self.settings, self)
+            self.connection_dialog.connected.connect(self.on_connected)
+        self.connection_dialog.show()
+        self.connection_dialog.raise_()
+        self.connection_dialog.activateWindow()
+
+    def on_connected(self, path, snapshot):
+        saved = self.settings.update(cli_path=path)
+        self._reset_attempt = None
+        self.on_success(snapshot)
+        if not saved:
+            self.connection_dialog.status_label.setText('本次连接成功，但无法保存配置。请将软件移动到可写目录，以便下次自动连接。')
+        self.show_bubble('连接好了，我来帮你看着额度。')
 
     def credit_help(self):
         QMessageBox.information(self, '重置卡与额外积分 · 码伴',
@@ -531,9 +558,9 @@ class PetWindow(QWidget):
     def connection_help(self):
         QMessageBox.information(self, '连接 Codex · 码伴',
             '码伴读取本机 Codex CLI 当前登录账号的额度。\n\n'
-            '如果没有安装 CLI：在终端运行 npm install -g @openai/codex\n'
-            '如果没有登录：在终端运行 codex login，使用 ChatGPT 账号登录。\n'
-            '完成后点击卡片右上角的刷新按钮。\n\n'
+            '推荐：右键选择“一键连接 Codex”，自动检测、安装并引导登录。\n'
+            '若浏览器未打开，可在终端手动运行 codex login。\n'
+            '完成后点击刷新，或在连接窗口中重试。\n\n'
             'CLI 账号可能与 Codex 桌面应用中的账号不同，请使用同一个账号。\n'
             '也可以右键“选择 codex.exe”指定已安装的原生 CLI。\n\n'
             '两条额度来自服务返回的窗口；缺失数据会显示 —。\n'
@@ -564,6 +591,11 @@ class PetWindow(QWidget):
         self.refresh_timer.stop()
         self.animation.stop()
         self.clock.stop()
+        if self.connection_dialog and self.connection_dialog.busy():
+            self.connection_dialog.reject()
+            event.ignore()
+            QTimer.singleShot(300, self.close)
+            return
         if self.worker and self.worker.isRunning():
             self.worker.cancel.set()
             # Worker polls every 100 ms and owns a bounded subprocess shutdown.

@@ -18,6 +18,10 @@ for line in sys.stdin:
         print(json.dumps({'id': request['id'], 'result': {'userAgent': 'test'}}), flush=True)
     elif method == 'initialized':
         continue
+    elif method == 'account/read':
+        assert request['params'] == {'refreshToken': False}
+        account = None if mode == 'signed_out' else {'type': 'apiKey' if mode == 'api_key' else 'chatgpt'}
+        print(json.dumps({'id': request['id'], 'result': {'account': account}}), flush=True)
     elif method == 'account/rateLimits/read':
         if mode == 'auth':
             print(json.dumps({'id': request['id'], 'error': {'code': 401, 'message': 'auth token secret-must-not-leak'}}), flush=True)

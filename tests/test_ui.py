@@ -3,6 +3,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtCore import QPoint, Qt
@@ -102,6 +103,23 @@ class UiTests(unittest.TestCase):
         self.assertEqual(replacement.appearance, 'dragon')
         replacement.close()
         replacement.deleteLater()
+
+    def test_one_click_connection_saves_path_and_updates_quota(self):
+        snapshot = self.pet.snapshot
+        self.pet.open_connection()
+        dialog = self.pet.connection_dialog
+        with patch('codexpet.connection_dialog.connect_account', return_value=('test-codex.exe', snapshot)) as connect:
+            QTest.mouseClick(dialog.start_button, Qt.MouseButton.LeftButton)
+            for _ in range(30):
+                QTest.qWait(20)
+                if not dialog.busy():
+                    break
+            self.assertFalse(dialog.busy())
+            connect.assert_called_once()
+            self.assertIn('连接成功', dialog.status_label.text())
+            self.assertEqual(self.pet.settings.get('cli_path'), 'test-codex.exe')
+            self.assertIs(self.pet.snapshot, snapshot)
+        dialog.reject()
 
 
 if __name__ == '__main__':
